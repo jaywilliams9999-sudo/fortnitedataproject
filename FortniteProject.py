@@ -12,7 +12,7 @@ import seaborn as sns
 main_df = pd.read_csv("Fortnite Statistics.csv")
 
 #revise dataframe by removing not needed metrics
-revised_df = main_df.drop(columns=['Mental State', 'Date', 'Time of Day'])
+revised_df = main_df.drop(columns=['Date', 'Time of Day'])
 
 #make sure it worked
 print(revised_df)
@@ -58,3 +58,4 @@ for ax, feature in zip(axes, ['Eliminations', 'Damage to Players', 'Accuracy']):
 
 plt.tight_layout()
 plt.show()
+
