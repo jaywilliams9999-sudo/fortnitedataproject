@@ -1,61 +1,117 @@
 import pandas as pd
 import numpy as np
-from sklearn import datasets
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score, mean_absolute_error
-import seaborn as sns
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.metrics import (
+    r2_score, mean_absolute_error, mean_squared_error,
+    accuracy_score, precision_score, recall_score, f1_score,
+    classification_report, roc_curve, auc
+)
 
-#create initial dataframe
+# -------------------------
+# Load & clean data
+# -------------------------
 main_df = pd.read_csv("Fortnite Statistics.csv")
 
-#revise dataframe by removing not needed metrics
+# Remove unused columns
 revised_df = main_df.drop(columns=['Date', 'Time of Day'])
 
-#make sure it worked
-print(revised_df)
+# Convert Accuracy from "xx%" string → float (0–1)
+revised_df['Accuracy'] = (
+    revised_df['Accuracy'].str.replace('%', '').astype(float) / 100
+)
 
-#convert accuracy to float from string
-revised_df['Accuracy'] = revised_df['Accuracy'].str.replace('%', '').astype(float) / 100
+# -------------------------
+# LINEAR REGRESSION
+# Predict exact placement
+# -------------------------
+X_reg = revised_df[['Eliminations', 'Damage to Players', 'Accuracy']]
+y_reg = revised_df['Placed']
 
-#select features and target
-X = revised_df[['Eliminations', 'Damage to Players', 'Accuracy']]
-y = revised_df['Placed']
+# Train/test split
+X_train_reg, X_test_reg, y_train_reg, y_test_reg = train_test_split(
+    X_reg, y_reg, test_size=0.2, random_state=42
+)
 
-# Train-test split (80/20)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# Scale features
+scaler_reg = StandardScaler()
+X_train_reg_scaled = scaler_reg.fit_transform(X_train_reg)
+X_test_reg_scaled = scaler_reg.transform(X_test_reg)
 
-#scale features
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+# Train linear regression
+reg_model = LinearRegression()
+reg_model.fit(X_train_reg_scaled, y_train_reg)
 
-#linear regression
-model = LinearRegression()
-model.fit(X_train_scaled, y_train)
+# Predict
+y_pred_reg = reg_model.predict(X_test_reg_scaled)
 
-y_pred = model.predict(X_test_scaled)
+# Evaluate regression
+print("----- Linear Regression Metrics -----")
+print("R²:", r2_score(y_test_reg, y_pred_reg))
+print("MAE:", mean_absolute_error(y_test_reg, y_pred_reg))
+print("RMSE:", np.sqrt(mean_squared_error(y_test_reg, y_pred_reg)))
 
-print("R²:", r2_score(y_test, y_pred))
-print("MAE:", mean_absolute_error(y_test, y_pred))
+# -------------------------
+# BINARY CLASSIFICATION
+# Top 10 (1) vs Not Top 10 (0)
+# -------------------------
+revised_df['Top10'] = (revised_df['Placed'] <= 10).astype(int)
 
-# Combine scaled features and predictions into one DataFrame for plotting
-plot_df = X_test.copy()
-plot_df['Placed (Actual)'] = y_test
-plot_df['Placed (Predicted)'] = y_pred
+X_clf = revised_df[['Eliminations', 'Damage to Players', 'Accuracy']]
+y_clf = revised_df['Top10']
 
-# Plot relationships
-fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+# Stratified split to maintain class balance
+X_train_clf, X_test_clf, y_train_clf, y_test_clf = train_test_split(
+    X_clf, y_clf, test_size=0.2, random_state=42, stratify=y_clf
+)
 
-for ax, feature in zip(axes, ['Eliminations', 'Damage to Players', 'Accuracy']):
-    sns.regplot(x=plot_df[feature], y=plot_df['Placed (Actual)'], ax=ax, scatter_kws={'alpha':0.6})
-    ax.set_title(f'{feature} vs Placement')
-    ax.set_ylabel('Placed')
-    ax.invert_yaxis()  # Lower placement = better performance
-    ax.set_xlabel(feature)
+# Scale features
+scaler_clf = StandardScaler()
+X_train_clf_scaled = scaler_clf.fit_transform(X_train_clf)
+X_test_clf_scaled = scaler_clf.transform(X_test_clf)
 
-plt.tight_layout()
+# Logistic regression (binary)
+clf_model = LogisticRegression(max_iter=500)
+clf_model.fit(X_train_clf_scaled, y_train_clf)
+
+# Predict
+y_pred_clf = clf_model.predict(X_test_clf_scaled)
+
+# Evaluate classification
+print("\n----- Binary Classification Metrics (Top 10 vs Not Top 10) -----")
+print("Accuracy:", accuracy_score(y_test_clf, y_pred_clf))
+print("Precision:", precision_score(y_test_clf, y_pred_clf, zero_division=0))
+print("Recall:", recall_score(y_test_clf, y_pred_clf, zero_division=0))
+print("F1 Score:", f1_score(y_test_clf, y_pred_clf, zero_division=0))
+
+print("\nClassification Report:")
+print(classification_report(y_test_clf, y_pred_clf, target_names=['Not Top 10','Top 10'], zero_division=0))
+
+# Quick check for unique values
+print("Unique classes in test target:", np.unique(y_test_clf))
+print("Unique classes in predictions:", np.unique(y_pred_clf))
+
+#visualize model error for linear
+plt.figure(figsize=(6,6))
+plt.scatter(y_test_reg, y_pred_reg, alpha=0.6)
+plt.plot([y_test_reg.min(), y_test_reg.max()], [y_test_reg.min(), y_test_reg.max()], 'r--')
+plt.xlabel("Actual Placement")
+plt.ylabel("Predicted Placement")
+plt.title("Linear Regression: Actual vs Predicted")
 plt.show()
 
+#ROC Curve for logistic
+y_prob = clf_model.predict_proba(X_test_clf_scaled)[:,1]  # probability for class 1
+fpr, tpr, thresholds = roc_curve(y_test_clf, y_prob)
+roc_auc = auc(fpr, tpr)
+
+plt.figure(figsize=(6,6))
+plt.plot(fpr, tpr, color='blue', label=f'ROC curve (AUC = {roc_auc:.2f})')
+plt.plot([0,1], [0,1], 'r--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Logistic Regression ROC Curve')
+plt.legend()
+plt.show()
